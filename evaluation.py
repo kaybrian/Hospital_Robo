@@ -1,4 +1,3 @@
-import gymnasium as gym
 from stable_baselines3 import DQN
 import numpy as np
 import time
@@ -28,7 +27,6 @@ def evaluate_episode(env, model):
         time.sleep(0.1)
 
     return total_reward, steps, collisions
-
 
 def main():
     # Create environment with rendering enabled
@@ -60,8 +58,15 @@ def main():
     print(f"Average Steps: {np.mean(steps_list):.2f} ± {np.std(steps_list):.2f}")
     print(f"Average Collisions: {np.mean(collisions_list):.2f} ± {np.std(collisions_list):.2f}")
 
-    env.close()
+    # Let the robot play autonomously
+    print("\nRobot is playing autonomously...")
+    total_reward, steps, collisions = evaluate_episode(env, model)
+    print("\nAutonomous Play Results:")
+    print(f"Total Reward: {total_reward:.2f}")
+    print(f"Steps Taken: {steps}")
+    print(f"Collisions: {collisions}")
 
+    env.close()
 
 if __name__ == "__main__":
     main()

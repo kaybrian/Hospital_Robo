@@ -1,86 +1,92 @@
-import os
 import numpy as np
-import gymnasium as gym
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
-# Add callback for saving best model
-from stable_baselines3.common.callbacks import EvalCallback
+import matplotlib.pyplot as plt
+import pickle
 
 # Import custom environment
 from hospital_robot_env import HospitalRobotEnv
 
-import ale_py
+def run(episodes, is_training=True):
+    # Create the custom environment
+    env = DummyVecEnv([lambda: HospitalRobotEnv()])
 
-
-def make_env():
-    """Create and wrap the hospital robot environment"""
-    gym.register_envs(ale_py)
-    env = HospitalRobotEnv(render_mode=None)
-    return env
-
-
-def main():
-    # Create directories for saving models and logs
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("logs", exist_ok=True)
-
-    # Create and wrap the environment
-    env = DummyVecEnv([make_env])
-
-    # Initialize the DQN agent with improved parameters
+    # Initialize the DQN model
     model = DQN(
         "MlpPolicy",
         env,
-        learning_rate=3e-4,  # Slightly increased learning rate
-        buffer_size=100000,  # Increased buffer size
-        learning_starts=5000,  # More initial random actions
-        batch_size=128,  # Larger batch size
+        learning_rate=0.0005, # Lower learning rate for stability
+        buffer_size=50000, # Larger buffer for more training data
+        learning_starts=1000,
+        batch_size=64,
         gamma=0.99,
-        exploration_fraction=0.2,  # Longer exploration
-        exploration_initial_eps=1.0,
-        exploration_final_eps=0.02,  # Lower final exploration
-        train_freq=4,
-        gradient_steps=2,  # More gradient steps
-        target_update_interval=500,  # More frequent target updates
+        exploration_fraction=0.1,
+        exploration_final_eps=0.05, # Lower final epsilon for more exploitation
+        target_update_interval=1000,
         verbose=1,
-        tensorboard_log="logs/",
-        policy_kwargs=dict(
-            net_arch=[256, 256, 256]  # Deeper network
-        )
+        policy_kwargs=dict(net_arch=[256, 256]),  # Better architecture for more complex environments
+        tensorboard_log="./tensorboard_logs/"  # Log for Tensorboard monitoring
     )
 
-    # Train for longer
-    total_timesteps = 500000  # Increased from 100000
+    rewards_per_episode = np.zeros(episodes)
 
-    # Add evaluation callback
-    eval_env = DummyVecEnv([make_env])
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path="./models/best_model",
-        log_path="./logs/",
-        eval_freq=5000,
-        deterministic=True,
-        render=False
-    )
+    # Training loop
+    for i in range(episodes):
+        obs = env.reset()
+        done = False
+        episode_reward = 0
 
-    # Train the agent
-    model.learn(
-        total_timesteps=total_timesteps,
-        progress_bar=True,
-        callback=eval_callback
-    )
+        while not done:
+            # Predict the action based on the current policy
+            action, _ = model.predict(obs, deterministic=not is_training)
 
-    # Evaluate the model
-    mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=10)
-    print(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+            # Take the action and get the new state and reward
+            new_obs, reward, done, truncated, info = env.step(action)
 
-    # Save the final model
-    model.save("models/hospital_robot_dqn")
+            episode_reward += reward
 
-    # Close the environment
+            if is_training:
+                # Update the model after each step
+                model.learn(total_timesteps=1, reset_num_timesteps=False)
+
+            # Update the observation for the next step
+            obs = new_obs
+
+        rewards_per_episode[i] = episode_reward
+
+        # Print the reward for the current episode
+        if i % 100 == 0:
+            print(f"Episode {i} Reward: {episode_reward}")
+
+    # Post-training processing
     env.close()
 
+    # Save training rewards
+    if is_training:
+        plt.plot(np.convolve(rewards_per_episode, np.ones((100,))/100, mode='valid'))
+        plt.title("Hospital Robot Rewards")
+        plt.xlabel("Episode")
+        plt.ylabel("Reward")
+        plt.savefig('hospital_robot_rewards.png')
+
+        # Save the trained model
+        model.save("models/hospital_robot_dqn")
+
+        # Save the rewards for analysis later
+        with open("hospital_rewards.pkl", "wb") as f:
+            pickle.dump(rewards_per_episode, f)
+
+    # Evaluate the policy (for performance check)
+    if not is_training:
+        print("Evaluating trained model:")
+        mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=10)
+        print(f"Mean reward: {mean_reward} ± {std_reward}")
 
 if __name__ == "__main__":
-    main()
+    # Train the model
+    run(10000, is_training=True)  # Train for 10,000 episodes
+
+    # Evaluate the trained model
+    run(10, is_training=False)  # Evaluate for 10 episodes
+
