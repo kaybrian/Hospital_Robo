@@ -5,23 +5,24 @@ import random
 
 class HospitalRobotEnv(gym.Env):
     """
-    Custom Hospital Robot Navigation Environment
+       Custom Hospital Robot Navigation Environment
 
-    Objective:
-    - Navigate a robot carrying a patient from a starting room to the operation room
-    - Avoid walls and obstacles
-    - Take the shortest path
-    - Minimize steps and collisions
-    - Maximize rewards
-    - Reach the operation room within a limited number of steps
-    - Reward:
-        - +1 for moving closer to the target,
-        - -0.5 for moving away,
-        - -5 for collision,
-        - +200 for success,
-        - +10 for picking up the patient
+       Objective:
+       - Navigate a robot carrying a patient from a starting room to the operation room
+       - Avoid walls and obstacles
+       - Take the shortest path
+       - Minimize steps and collisions
+       - Maximize rewards
+       - Reach the operation room within a limited number of steps
 
-    """
+       Reward:
+           - +1 for moving closer to the target,
+           - -0.5 for moving away,
+           - -5 for collision,
+           - +200 for successful delivery of the patient,
+           - +10 for picking up the patient
+
+       """
 
     def __init__(self, render_mode=None, grid_size=(50, 50)):
         super().__init__()
@@ -53,6 +54,7 @@ class HospitalRobotEnv(gym.Env):
         self.patient_pos = None
         self.operation_room_pos = None
         self.walls = []
+        self.has_patient = False  # New state variable
 
         # Game state
         self.steps = 0
@@ -208,6 +210,8 @@ class HospitalRobotEnv(gym.Env):
             pygame.display.set_caption("Hospital Robot Navigation")
             self.clock = pygame.time.Clock()
 
+        self.has_patient = False  # Initialize patient status
+
         return self._get_observation(), {}
 
     def step(self, action):
@@ -251,6 +255,15 @@ class HospitalRobotEnv(gym.Env):
             elif current_distance > previous_distance:
                 reward -= 0.5  # Moving away
 
+        # Check if the robot is at the patient's position and hasn't picked up the patient yet
+        if self.robot_pos == self.patient_pos and not self.has_patient:
+            self.has_patient = True
+            reward += 10  # Reward for picking up the patient
+
+        # Update the observation to reflect the patient being carried
+        if self.has_patient:
+            self.grid[self.robot_pos[0], self.robot_pos[1]] = 4  # Robot carrying patient
+
         # Check if the robot reached the destination (operation room)
         if self.robot_pos == self.operation_room_pos:
             reward += 200  # Success reward
@@ -259,9 +272,12 @@ class HospitalRobotEnv(gym.Env):
         # Increment steps
         self.steps += 1
 
+
         # Check if we've reached the maximum allowed steps
         if self.steps >= self.max_steps:
             truncated = True
+
+
 
         # Prepare the observation
         obs = self._get_observation()
@@ -269,7 +285,8 @@ class HospitalRobotEnv(gym.Env):
         # Return the new state (observation), reward, terminated flag, truncated flag, and additional info
         info = {"truncated": truncated}  # Additional information
 
-        return obs, reward, terminated, truncated, info  # 5 values
+        return obs, reward, terminated, truncated, info
+
 
     def _get_observation(self):
         """
