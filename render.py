@@ -2,8 +2,7 @@ import gymnasium as gym
 import pygame
 import time
 import numpy as np
-from hospital_robot_env import HospitalRobotEnv
-
+from hospital_robot_env.hospital_robot_env import  HospitalRobotEnv
 
 def render_environment():
     # Create an instance of the environment
@@ -12,7 +11,7 @@ def render_environment():
     # Reset the environment
     observation, _ = env.reset()
 
-    # Render loop
+
     done = False
     while not done:
         # Get action from the environment (for now, just moving randomly)

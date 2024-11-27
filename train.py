@@ -1,100 +1,136 @@
-import numpy as np
-from stable_baselines3 import DQN
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.evaluation import evaluate_policy
-import matplotlib.pyplot as plt
-import pickle
-from stable_baselines3.common.vec_env import SubprocVecEnv
-import ale_py
-# Import custom environment
-from hospital_robot_env import HospitalRobotEnv
 import gymnasium as gym
+import ale_py
+import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+from mpl_toolkits.axisartist.floating_axes import FixedAxisArtistHelper
 
+# entry_point follows the format "module_name:class_name"
+gym.register(
+    id="HospitalRobot-v0",
+    entry_point="hospital_robot_env.hospital_robot_env:HospitalRobotEnv",
+    max_episode_steps=200,
+)
 
+# Register ALE environments
 gym.register_envs(ale_py)
 
+
+def discretize_state(state):
+    # Convert the entire grid state to a hashable tuple
+    return tuple(state.flatten())
+
+
 def run(episodes, is_training=True, render=False):
-    # Create the custom environment using SubprocVecEnv
-    env = SubprocVecEnv([lambda: HospitalRobotEnv()])
+    env = gym.make("HospitalRobot-v0", render_mode="human" if render else None)
 
-    # Initialize the DQN model
-    model = DQN(
-        "MlpPolicy",
-        env,
-        learning_rate=0.0005,
-        buffer_size=50000,
-        learning_starts=1000,
-        batch_size=64,
-        gamma=0.99,
-        exploration_fraction=0.1,
-        exploration_final_eps=0.05,
-        target_update_interval=1000,
-        verbose=1,
-        policy_kwargs=dict(net_arch=[256, 256]),
-        tensorboard_log="./tensorboard_logs/"
-    )
+    # Use a dictionary for Q-table instead of numpy array
+    if is_training:
+        q = {}
+    else:
+        with open("HospitalRobot.pkl", "rb") as f:
+            q = pickle.load(f)
 
-    rewards_per_episode = np.zeros(episodes)
+    learning_rate = 0.1  # Adjusted learning rate
+    discount_factor = 0.99  # Slightly higher discount factor
+    epsilon = 1  # Exploration rate
+    epsilon_decay_rate = 0.0005  # Slightly slower decay
+    rng = np.random.default_rng()
 
-    # Training loop
+    # Track more detailed rewards
+    total_rewards_per_episode = np.zeros(episodes)
+    success_episodes = 0
+    total_steps_to_goal = []
+
     for i in range(episodes):
-        obs = env.reset()
-        done = [False]  # done should be a list or array
+        # Progress and statistics print
+        if i % 100 == 0:
+            print(f"Episode {i}/{episodes}")
+            if i > 0:
+                print(f"Success rate: {success_episodes / 100 * 100:.2f}%")
+                print(f"Avg steps to goal: {np.mean(total_steps_to_goal) if total_steps_to_goal else 'N/A'}")
+                success_episodes = 0
+                total_steps_to_goal = []
+
+        state = env.reset()[0]  # Get the initial state
+        state_key = discretize_state(state)
+        terminated = False
+        truncated = False
         episode_reward = 0
+        episode_steps = 0
 
-        while not done[0]:
-            # Predict the action based on the current policy
-            action, _ = model.predict(obs, deterministic=not is_training)
+        while not (terminated or truncated):
+            # Initialize Q-value for state if not exists
+            if state_key not in q:
+                q[state_key] = np.zeros(env.action_space.n)
 
-            # Take the action and get the new state and reward
-            new_obs, reward, done, info = env.step(action)
+            # Epsilon-greedy action selection
+            if is_training and rng.random() < epsilon:
+                action = env.action_space.sample()  # Random action for exploration
+            else:
+                action = np.argmax(q[state_key])  # Best action according to Q-table
 
-            episode_reward += reward[0]  # reward is returned as an array
+            new_state, reward, terminated, truncated, _ = env.step(action)
+            new_state_key = discretize_state(new_state)
+
+            # Initialize Q-value for new state if not exists
+            if new_state_key not in q:
+                q[new_state_key] = np.zeros(env.action_space.n)
 
             if is_training:
-                # Update the model after each step
-                model.learn(total_timesteps=1, reset_num_timesteps=False)
+                # Q-learning update
+                q[state_key][action] = q[state_key][action] + learning_rate * (
+                        reward + discount_factor * np.max(q[new_state_key]) - q[state_key][action]
+                )
 
-            # Update the observation for the next step
-            obs = new_obs
+            state = new_state
+            state_key = new_state_key
+            episode_reward += reward
+            episode_steps += 1
 
-            # Check if episode is done
-            if done[0]:  # done is returned as an array
-                break
+        # Track episode statistics
+        total_rewards_per_episode[i] = episode_reward
 
-        rewards_per_episode[i] = episode_reward
+        # Check for successful episode (reached goal)
+        if reward > 100:  # Assuming reward > 100 indicates reaching the goal
+            success_episodes += 1
+            total_steps_to_goal.append(episode_steps)
 
-        # Print the reward for the current episode
-        if i % 100 == 0:
-            print(f"Episode {i} Reward: {episode_reward}")
+        # Decay epsilon
+        epsilon = max(epsilon - epsilon_decay_rate, 0.01)
 
-    # Post-training processing
+        # Optionally adjust learning rate
+        if epsilon < 0.1:
+            learning_rate = 0.01
+
+    # Close the environment
     env.close()
 
-    # Save training rewards
+    # Compute moving average of rewards
+    window_size = 100
+    smoothed_rewards = np.convolve(total_rewards_per_episode, np.ones(window_size) / window_size, mode='valid')
+
+    # Plot the rewards if training
     if is_training:
-        plt.plot(np.convolve(rewards_per_episode, np.ones((100,))/100, mode='valid'))
-        plt.title("Hospital Robot Rewards")
-        plt.xlabel("Episode")
-        plt.ylabel("Reward")
-        plt.savefig('hospital_robot_rewards.png')
+        plt.figure(figsize=(10, 5))
+        plt.plot(smoothed_rewards)
+        plt.title('Smoothed Rewards over Episodes')
+        plt.xlabel('Episodes')
+        plt.ylabel('Reward')
+        plt.savefig('HospitalRobot_Rewards.png')
+        plt.close()
 
-        # Save the trained model
-        model.save("models/hospital_robot_dqn")
+    # Save the Q-table after training
+    if is_training:
+        with open("HospitalRobot.pkl", "wb") as f:
+            pickle.dump(q, f)
 
-        # Save the rewards for analysis later
-        with open("hospital_rewards.pkl", "wb") as f:
-            pickle.dump(rewards_per_episode, f)
+    return total_rewards_per_episode
 
-    # Evaluate the policy
-    if not is_training:
-        print("Evaluating trained model:")
-        mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=10)
-        print(f"Mean reward: {mean_reward} ± {std_reward}")
 
 if __name__ == "__main__":
-    # Train the model
-    run(10000, is_training=True)  # Train for 10,000 episodes
+    # Train the agent
+    rewards = run(1000)
 
-    # Evaluate the trained model
-    run(10, is_training=False)  # Evaluate for 10 episodes
+    # Test the trained agent
+    run(10, is_training=False, render=True)

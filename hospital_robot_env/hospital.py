@@ -321,4 +321,5 @@ class HospitalRobotEnv(gym.Env):
 
 # Shortcut function to create vectorized environment
 def make_hospital_env():
+
     return HospitalRobotEnv()
