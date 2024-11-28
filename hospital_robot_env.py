@@ -82,60 +82,57 @@ class HospitalRobotEnv(gym.Env):
         """
         obstacles = []
 
-        # Different obstacle patterns based on grid size
+        # Maze-like layout and challenging patterns
         if self.grid_size == 10:
-            # Maze-like configuration
+            # Complex maze-like configuration with tighter spaces
             obstacles = [
                 # Horizontal walls
                 (2, 3), (2, 4), (2, 5), (2, 6),
                 (5, 3), (5, 4), (5, 5), (5, 6),
                 (7, 2), (7, 3), (7, 4),
-
                 # Vertical walls
                 (3, 2), (4, 2),
                 (6, 5), (6, 6), (6, 7),
-
-                # Random obstacles
-                (1, 7), (3, 8), (8, 4), (9, 2)
+                # Zigzag pattern in the middle
+                (4, 7), (5, 7), (6, 7), (5, 8),
+                # Random scattered obstacles
+                (1, 7), (8, 5), (9, 2)
             ]
         elif self.grid_size == 15:
-            # More complex maze
+            # Intricate maze with twists and turns
             obstacles = [
                 # Horizontal barriers
                 (3, 4), (3, 5), (3, 6), (3, 7),
                 (7, 8), (7, 9), (7, 10), (7, 11),
                 (11, 3), (11, 4), (11, 5),
-
                 # Vertical barriers
                 (4, 3), (5, 3),
                 (8, 6), (9, 6), (10, 6),
-
-                # Diagonal obstacles
+                # Diagonal or corner obstacles
                 (2, 9), (3, 8), (4, 7),
                 (12, 5), (11, 6), (10, 7),
-
-                # Scattered obstacles
-                (5, 11), (6, 12), (1, 13), (14, 2)
+                # Sprawling obstacles
+                (6, 12), (1, 13), (14, 2),
+                # Trap-like area
+                (8, 10), (8, 9)
             ]
         elif self.grid_size == 20:
-            # Large, more intricate maze
+            # Larger, intricate maze with different paths
             obstacles = [
                 # Main horizontal barriers
                 (5, 6), (5, 7), (5, 8), (5, 9), (5, 10),
                 (10, 11), (10, 12), (10, 13), (10, 14), (10, 15),
                 (15, 5), (15, 6), (15, 7),
-
                 # Vertical barriers
                 (6, 5), (7, 5),
                 (12, 10), (13, 10), (14, 10),
-
-                # Zigzag patterns
+                # Zigzag patterns and winding paths
                 (3, 8), (4, 9), (5, 10),
                 (16, 12), (17, 13), (18, 14),
-
-                # Scattered obstacles
-                (2, 15), (7, 17), (12, 3), (18, 6),
-                (9, 8), (14, 16), (3, 12), (17, 9)
+                # Scattered traps and complex areas
+                (9, 6), (14, 16), (18, 4),
+                # Random but strategic placement
+                (12, 3), (3, 12), (2, 18)
             ]
         else:
             # Default random generation for other grid sizes
@@ -263,13 +260,13 @@ class HospitalRobotEnv(gym.Env):
         # Patient pickup
         if not self.has_patient and np.array_equal(self.robot_pos, self.patient_pos):
             self.has_patient = True
-            reward += 10
+            reward += 20
 
         # Movement rewards and penalties
         if new_dist_to_patient < old_dist_to_patient:
-            reward += 3  # Moving closer to patient
+            reward += 4  # Moving closer to patient
         elif new_dist_to_patient > old_dist_to_patient:
-            reward -= 9  # Moving away from patient
+            reward -= 10  # Moving away from patient
 
         # Operation room delivery
         if (self.has_patient and
