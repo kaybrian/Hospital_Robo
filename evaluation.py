@@ -1,72 +1,81 @@
-from stable_baselines3 import DQN
+import gymnasium as gym
 import numpy as np
-import time
+import pickle
+import random
+
+# Custom environment import
 from hospital_robot_env import HospitalRobotEnv
 
-def evaluate_episode(env, model):
-    obs, _ = env.reset()
-    total_reward = 0
-    steps = 0
-    collisions = 0
-    done = False
 
-    while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        prev_obs = obs
-        obs, reward, terminated, truncated, info = env.step(action)
+def state_to_discrete(state, grid_size):
+    """
+    Convert continuous state to a discrete representation
 
-        # Count collisions
-        if reward <= -5:  # Collision detected
-            collisions += 1
+    Args:
+        state (np.ndarray): Continuous state representation
+        grid_size (int): Size of the grid
 
-        total_reward += reward
-        steps += 1
-        done = terminated or truncated
+    Returns:
+        int: Discrete state representation
+    """
+    # Flatten the state and create a unique index
+    flattened_state = state.flatten()
 
-        # Add delay for visualization
-        time.sleep(0.1)
+    # Create a unique index based on the flattened state
+    # Ensure the state is within grid bounds
+    discrete_state = tuple(
+        min(max(0, int(coord)), grid_size - 1)
+        for coord in flattened_state
+    )
 
-    return total_reward, steps, collisions
+    # Use a hash or unique mapping technique
+    return hash(discrete_state) % (grid_size ** 6)
 
-def main():
-    # Create environment with rendering enabled
-    env = HospitalRobotEnv(render_mode="human")
 
-    # Load the best model instead of the final one
-    model = DQN.load("models/best_model/best_model")
+def test_trained_agent(render=True):
+    """
+    Test the trained hospital robot navigation agent
 
-    # Run several episodes with detailed metrics
-    n_episodes = 5
-    rewards = []
-    steps_list = []
-    collisions_list = []
+    Args:
+        render (bool): Whether to render the environment
+    """
+    # Load the trained Q-table
+    with open("hospital_robot_q_table.pkl", "rb") as f:
+        q_table = pickle.load(f)
 
-    for episode in range(n_episodes):
-        print(f"\nStarting Episode {episode + 1}")
-        reward, steps, collisions = evaluate_episode(env, model)
-        rewards.append(reward)
-        steps_list.append(steps)
-        collisions_list.append(collisions)
+    # Create environment for testing
+    render_mode = "human" if render else None
+    env = HospitalRobotEnv(render_mode=render_mode)
 
-        print(f"Episode {episode + 1} Results:")
-        print(f"Total Reward: {reward:.2f}")
-        print(f"Steps Taken: {steps}")
-        print(f"Collisions: {collisions}")
+    # Run a few test episodes
+    for _ in range(30):
+        observation, _ = env.reset()
+        state = state_to_discrete(observation, env.grid_size)
 
-    print("\nOverall Statistics:")
-    print(f"Average Reward: {np.mean(rewards):.2f} ± {np.std(rewards):.2f}")
-    print(f"Average Steps: {np.mean(steps_list):.2f} ± {np.std(steps_list):.2f}")
-    print(f"Average Collisions: {np.mean(collisions_list):.2f} ± {np.std(collisions_list):.2f}")
+        terminated = False
+        truncated = False
+        total_reward = 0
 
-    # Let the robot play autonomously
-    print("\nRobot is playing autonomously...")
-    total_reward, steps, collisions = evaluate_episode(env, model)
-    print("\nAutonomous Play Results:")
-    print(f"Total Reward: {total_reward:.2f}")
-    print(f"Steps Taken: {steps}")
-    print(f"Collisions: {collisions}")
+        while not (terminated or truncated):
+            # Choose best action
+            action = np.argmax(q_table[state, :])
+
+            # Take action
+            next_observation, reward, terminated, truncated, _ = env.step(action)
+
+            # Update state
+            state = state_to_discrete(next_observation, env.grid_size)
+            total_reward += reward
+
+            # Render the environment if required
+            if render:
+                env.render()
+
+        print(f"Test Episode Total Reward: {total_reward}")
 
     env.close()
 
+
 if __name__ == "__main__":
-    main()
+    # Test the trained agent
+    test_trained_agent()

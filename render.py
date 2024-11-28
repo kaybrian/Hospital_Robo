@@ -6,7 +6,7 @@ from hospital_robot_env.hospital_robot_env import  HospitalRobotEnv
 
 def render_environment():
     # Create an instance of the environment
-    env = HospitalRobotEnv(render_mode="human", grid_size=(50, 50))
+    env = HospitalRobotEnv()
 
     # Reset the environment
     observation, _ = env.reset()
